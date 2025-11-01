@@ -20,3 +20,5 @@ This is a web-based dashboard for the eNose BLE module. It allows users to conne
 - Android - Google Chrome
 - iOS - Bluefy Browser
 
+## License
+- All copyrights reserved.
