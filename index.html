@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HKUST E-Nose BLE Dashboard v1.0</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>E-Nose Dashboard</h1>
+      <p>Connect to see the scents.</p>
+    </header>
+
+    <section class="data">
+      <section class="controls">
+        <div class="buttons">
+          <button id="btnConnect">Connect</button>
+          <button id="btnDisconnect" disabled>Disconnect</button>
+          <button id="btnStart" disabled>Start Polling</button>
+          <button id="btnStop" disabled>Stop Polling</button>
+          <button id="btnDownloadCSV" disabled>Download CSV</button>
+          <button id="btnClearLog" disabled>Clear Log</button>
+        </div>
+        <div class="settings">
+          <label>
+            Poll interval (ms)
+            <input type="number" id="pollInterval" min="100" step="100" value="1000" />
+          </label>
+        </div>
+        <div id="status">Idle</div>
+      </section>
+      <div id="grid" class="grid" style="--cols: 3"></div>
+      <div class="meta">
+        <div>Device: <span id="devName">-</span></div>
+        <div>numPx: <span id="numPx">-</span></div>
+      </div>
+      <div class="timeseries">
+        <canvas id="timeseriesCanvas" width="800" height="240"></canvas>
+        <div class="ts-side">
+          <label>
+            Window size (samples)
+            <input type="number" id="tsWindow" min="50" step="50" value="300" />
+          </label>
+          <div id="sensorMulti" class="sensor-multi"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <small>
+        <p>Note: Web Bluetooth requires HTTPS or localhost in Chrome. Use a local server.</p>
+        <p>Developed by Jonathan CHAN, ECE, HKUST.</p>
+        <p><span id="footerYear"></span>. All rights reserved.</p>
+      </small>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
