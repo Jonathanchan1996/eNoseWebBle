@@ -12,9 +12,11 @@ This is a web-based dashboard for the eNose BLE module. It allows users to conne
 
 ## Features
 - Web-based dashboard
-- Bluetooth connection via Web only
+- Bluetooth connection via Web browser only
 - Connect to the eNose BLE module
 
-## Smart phone compatibility
+## Device compatibility
+- Windows/Mac OSX - Google Chrome
 - Android - Google Chrome
 - iOS - Bluefy Browser
+
