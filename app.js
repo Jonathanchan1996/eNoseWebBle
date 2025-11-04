@@ -125,14 +125,14 @@ function renderValues(values) {
 async function connect() {
   try {
     setStatus('Requesting device…');
-    device = await navigator.bluetooth.requestDevice({
+  device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
     });
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-    el.devName.textContent = device.name || '(unknown)';
-    setStatus('Connecting…');
-    server = await device.gatt.connect();
-    service = await server.getPrimaryService(SERVICE_UUID);
+  device.addEventListener('gattserverdisconnected', onDisconnected);
+  el.devName.textContent = device.name || '(unknown)';
+  setStatus('Connecting…');
+  server = await device.gatt.connect();
+  service = await server.getPrimaryService(SERVICE_UUID);
     charNumPx = await service.getCharacteristic(CHAR_NUMPX_UUID);
     const numPxView = await charNumPx.readValue();
     numPx = numPxView.getUint8(0);
@@ -236,15 +236,21 @@ function toCSV() {
   return lines.join('\n');
 }
 
-// Format Date to "YYYYMMDD_hhmm" in local time
+// Format Date to "YYYYMMDD_hhmm" explicitly using the user's local timezone
 function formatYmdHm(d) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const year = d.getFullYear();
-  const month = pad(d.getMonth() + 1);
-  const day = pad(d.getDate());
-  const hour = pad(d.getHours());
-  const minute = pad(d.getMinutes());
-  return `${year}${month}${day}_${hour}${minute}`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const fmt = new Intl.DateTimeFormat([], {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  return `${get('year')}${get('month')}${get('day')}_${get('hour')}${get('minute')}`;
 }
 
 function downloadCSV() {
@@ -255,8 +261,6 @@ function downloadCSV() {
     const a = document.createElement('a');
     const sanitizeForFilename = (s) => String(s || '').replace(/[^a-zA-Z0-9._-]+/g, '-');
     const dev = sanitizeForFilename(el.devName.textContent || 'device');
-    // Web Bluetooth does not expose MAC addresses; use device.id as identifier if available
-    const bleId = sanitizeForFilename(device?.id || 'id-unknown');
     a.href = url;
     // Determine start & end timestamps from the log
     let startStr = 'unknown';
@@ -271,7 +275,7 @@ function downloadCSV() {
       startStr = formatYmdHm(now);
       endStr = startStr;
     }
-    a.download = `${dev}_${bleId}_sensor_log_${startStr}-${endStr}.csv`;
+    a.download = `${dev}_sensor_log_${startStr}-${endStr}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
