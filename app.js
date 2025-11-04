@@ -236,15 +236,42 @@ function toCSV() {
   return lines.join('\n');
 }
 
+// Format Date to "YYYYMMDD_hhmm" in local time
+function formatYmdHm(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hour = pad(d.getHours());
+  const minute = pad(d.getMinutes());
+  return `${year}${month}${day}_${hour}${minute}`;
+}
+
 function downloadCSV() {
   try {
     const csv = toCSV();
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const dev = el.devName.textContent || 'device';
+    const sanitizeForFilename = (s) => String(s || '').replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const dev = sanitizeForFilename(el.devName.textContent || 'device');
+    // Web Bluetooth does not expose MAC addresses; use device.id as identifier if available
+    const bleId = sanitizeForFilename(device?.id || 'id-unknown');
     a.href = url;
-    a.download = `${dev}_sensor_log.csv`;
+    // Determine start & end timestamps from the log
+    let startStr = 'unknown';
+    let endStr = 'unknown';
+    if (dataLog.length > 0) {
+      const start = new Date(dataLog[0][0]);
+      const end = new Date(dataLog[dataLog.length - 1][0]);
+      if (!isNaN(start)) startStr = formatYmdHm(start);
+      if (!isNaN(end)) endStr = formatYmdHm(end);
+    } else {
+      const now = new Date();
+      startStr = formatYmdHm(now);
+      endStr = startStr;
+    }
+    a.download = `${dev}_${bleId}_sensor_log_${startStr}-${endStr}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
