@@ -21,6 +21,9 @@ let reconnectTimer = null;
 let reconnectAttempts = 0;
 let manualDisconnect = false;
 let autoReconnectEnabled = true;
+let useNotifications = false;
+let notifyListenerBound = false;
+let readErrorCount = 0;
 
 const el = {
   btnConnect: document.getElementById('btnConnect'),
@@ -144,6 +147,7 @@ async function connect() {
     el.numPx.textContent = String(numPx);
     setupGrid(numPx);
     charData = await service.getCharacteristic(CHAR_DATA_UUID);
+    useNotifications = !!(charData.properties && charData.properties.notify);
     setStatus('Connected. Starting polling…');
     el.btnDisconnect.disabled = false;
     el.btnStart.disabled = false;
@@ -217,9 +221,23 @@ async function readOnce() {
     appendLog(values);
     updateTimeseries(values);
     setStatus(`Last update: ${new Date().toLocaleTimeString()}`);
+    readErrorCount = 0;
   } catch (err) {
     logError(err);
-    stopPolling();
+    // Do not stop polling immediately; attempt recovery
+    readErrorCount += 1;
+    const RECOVER_THRESHOLD = 3;
+    const RECONNECT_THRESHOLD = 8;
+    if (readErrorCount === RECOVER_THRESHOLD) {
+      refreshCharacteristics();
+      setStatus('Read error. Refreshing GATT characteristics…');
+    } else if (readErrorCount >= RECONNECT_THRESHOLD) {
+      setStatus('Repeated read errors. Scheduling reconnect…');
+      readErrorCount = 0;
+      if (autoReconnectEnabled) scheduleAutoReconnect();
+    } else {
+      setStatus('Read error. Will retry on next tick…');
+    }
   }
 }
 
@@ -270,6 +288,25 @@ function startPolling() {
     setStatus('Not connected');
     return;
   }
+  // Prefer notifications if supported
+  if (useNotifications && charData.properties && charData.properties.notify) {
+    // Start notifications only once
+    if (!notifyListenerBound) {
+      charData.startNotifications().then(() => {
+        charData.addEventListener('characteristicvaluechanged', onCharValueChanged);
+        notifyListenerBound = true;
+        setStatus('Receiving notifications…');
+      }).catch(err => {
+        logError(err);
+        setStatus('Failed to start notifications; falling back to polling.');
+        useNotifications = false;
+        startPolling();
+      });
+    }
+    el.btnStart.disabled = true;
+    el.btnStop.disabled = false;
+    return;
+  }
   const interval = Math.max(100, Number(el.pollInterval.value) || 1000);
   if (pollTimer) clearInterval(pollTimer);
   readOnce();
@@ -287,6 +324,12 @@ function stopPolling() {
     el.btnStop.disabled = true;
   setStatus('Polling stopped');
   }
+  // Stop notifications if active
+  if (notifyListenerBound && charData) {
+    try { charData.removeEventListener('characteristicvaluechanged', onCharValueChanged); } catch (_) {}
+    try { charData.stopNotifications(); } catch (_) {}
+    notifyListenerBound = false;
+  }
 }
 
 function appendLog(values) {
@@ -302,6 +345,43 @@ function toCSV() {
     lines.push(row.join(','));
   }
   return lines.join('\n');
+}
+
+function onCharValueChanged(event) {
+  try {
+    const value = event.target.value;
+    const bytes = new DataView(value.buffer);
+    const count = Math.min(numPx, Math.floor(bytes.byteLength / 2));
+    const values = new Array(count);
+    for (let i = 0; i < count; i++) {
+      values[i] = bytes.getUint16(i * 2, false);
+    }
+    renderValues(values);
+    appendLog(values);
+    updateTimeseries(values);
+    setStatus(`Last update: ${new Date().toLocaleTimeString()}`);
+  } catch (err) {
+    logError(err);
+  }
+}
+
+async function refreshCharacteristics() {
+  try {
+    if (!server || !device) return;
+    if (!server.connected) {
+      await device.gatt.connect();
+    }
+    service = await server.getPrimaryService(SERVICE_UUID);
+    charNumPx = await service.getCharacteristic(CHAR_NUMPX_UUID);
+    const numPxView = await charNumPx.readValue();
+    numPx = numPxView.getUint8(0);
+    el.numPx.textContent = String(numPx);
+    setupGrid(numPx);
+    charData = await service.getCharacteristic(CHAR_DATA_UUID);
+    useNotifications = !!(charData.properties && charData.properties.notify);
+  } catch (err) {
+    logError(err);
+  }
 }
 
 // Format Date to "YYYYMMDD_hhmm" explicitly using the user's local timezone
