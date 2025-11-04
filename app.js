@@ -139,12 +139,14 @@ async function connect() {
     el.numPx.textContent = String(numPx);
     setupGrid(numPx);
     charData = await service.getCharacteristic(CHAR_DATA_UUID);
-    setStatus('Connected. Ready to poll.');
+    setStatus('Connected. Starting polling…');
     el.btnDisconnect.disabled = false;
     el.btnStart.disabled = false;
     el.btnConnect.disabled = true;
     el.btnDownloadCSV.disabled = false;
     el.btnClearLog.disabled = false;
+    // Auto-start polling after connection
+    startPolling();
   } catch (err) {
     logError(err);
   }
