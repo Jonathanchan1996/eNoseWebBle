@@ -17,6 +17,10 @@ let tsBuffer = []; // array of { t: Date, values: number[] }
 let tsMaxSamples = 300;
 let heatMin = null;
 let heatMax = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let manualDisconnect = false;
+let autoReconnectEnabled = true;
 
 const el = {
   btnConnect: document.getElementById('btnConnect'),
@@ -33,6 +37,7 @@ const el = {
   sensorMulti: document.getElementById('sensorMulti'),
   tsCanvas: document.getElementById('timeseriesCanvas'),
   tsWindow: document.getElementById('tsWindow'),
+  autoReconnect: document.getElementById('autoReconnect'),
 };
 
 let tsCtx = null;
@@ -155,6 +160,11 @@ async function connect() {
 async function disconnect() {
   try {
     stopPolling();
+    manualDisconnect = true;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (device && device.gatt.connected) {
       device.gatt.disconnect();
     }
@@ -173,10 +183,24 @@ async function disconnect() {
 
 function onDisconnected() {
   setStatus('Device disconnected');
+  // Stop any active polling loop
+  stopPolling();
+  // Reset UI buttons
   el.btnDisconnect.disabled = true;
   el.btnStart.disabled = true;
   el.btnStop.disabled = true;
   el.btnConnect.disabled = false;
+  // If the user explicitly disconnected, do not auto-reconnect
+  if (manualDisconnect) {
+    manualDisconnect = false;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    return;
+  }
+  // Try auto-reconnect with exponential backoff (if enabled)
+  if (autoReconnectEnabled) scheduleAutoReconnect();
 }
 
 async function readOnce() {
@@ -196,6 +220,48 @@ async function readOnce() {
   } catch (err) {
     logError(err);
     stopPolling();
+  }
+}
+
+function scheduleAutoReconnect() {
+  // Backoff: 1s, 2s, 4s, 8s, ... up to 60s
+  const delay = Math.min(60000, Math.pow(2, reconnectAttempts) * 1000);
+  reconnectAttempts += 1;
+  setStatus(`Disconnected. Reconnecting in ${Math.round(delay / 1000)}s…`);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(tryReconnect, delay);
+}
+
+async function tryReconnect() {
+  if (!device) return;
+  try {
+    setStatus('Reconnecting…');
+    server = await device.gatt.connect();
+    service = await server.getPrimaryService(SERVICE_UUID);
+    charNumPx = await service.getCharacteristic(CHAR_NUMPX_UUID);
+    const numPxView = await charNumPx.readValue();
+    numPx = numPxView.getUint8(0);
+    el.numPx.textContent = String(numPx);
+    setupGrid(numPx);
+    charData = await service.getCharacteristic(CHAR_DATA_UUID);
+    // Restore UI state
+    el.btnDisconnect.disabled = false;
+    el.btnStart.disabled = false;
+    el.btnConnect.disabled = true;
+    el.btnDownloadCSV.disabled = false;
+    el.btnClearLog.disabled = false;
+    setStatus('Reconnected. Starting polling…');
+    // Clear backoff state
+    reconnectAttempts = 0;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    // Resume polling automatically
+    startPolling();
+  } catch (err) {
+    logError(err);
+    scheduleAutoReconnect();
   }
 }
 
@@ -389,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
   el.sensorMulti = document.getElementById('sensorMulti');
   el.tsCanvas = document.getElementById('timeseriesCanvas');
   el.tsWindow = document.getElementById('tsWindow');
+  el.autoReconnect = document.getElementById('autoReconnect');
   // Auto-update footer year
   const footerYear = document.getElementById('footerYear');
   if (footerYear) footerYear.textContent = String(new Date().getFullYear());
@@ -409,6 +476,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (el.tsWindow) {
     el.tsWindow.value = String(tsMaxSamples);
     el.tsWindow.addEventListener('change', onWindowSizeChange);
+  }
+  // Wire auto-reconnect checkbox
+  if (el.autoReconnect) {
+    autoReconnectEnabled = !!el.autoReconnect.checked;
+    el.autoReconnect.addEventListener('change', () => {
+      autoReconnectEnabled = !!el.autoReconnect.checked;
+      setStatus(`Auto reconnect ${autoReconnectEnabled ? 'enabled' : 'disabled'}`);
+      // If disabled, cancel any pending reconnect
+      if (!autoReconnectEnabled && reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    });
   }
 });
 
